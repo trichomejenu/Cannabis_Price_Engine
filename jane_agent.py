@@ -11,51 +11,49 @@ EMAIL_RECEIVER = os.environ.get("EMAIL_RECEIVER")
 TARGET_GROWER = "טריכום"
 
 def scrape_jane_products():
-    print(f"Starting API/Direct scan for grower: {TARGET_GROWER}")
+    print(f"Searching API for grower: {TARGET_GROWER}")
     products_data = []
 
-    # ננסה לגשת לנקודת קצה או לעמוד ראשי עם פרופיל דפדפן שונה (Safari / Firefox)
-    urls_to_try = [
-        "https://jane.co.il/",
-        "https://jane.co.il/cannabis-products"
-    ]
-
-    success = False
-    for url in urls_to_try:
-        try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "he-IL,he;q=0.9",
-                "Referer": "https://www.google.com/"
-            }
+    try:
+        # פנייה לכתובת חיפוש או קטלוג פנימית של האתר
+        url = "https://jane.co.il/api/products" # או נתיב חיפוש חלופי
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://jane.co.il/cannabis-products"
+        }
+        
+        response = requests.get(url, impersonate="chrome", headers=headers, timeout=30)
+        print(f"API Status: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            # סינון מוצרים של המגדל
+            found = False
+            for item in data:
+                if TARGET_GROWER in str(item):
+                    found = True
+                    products_data.append({
+                        "name": item.get("name", "מוצר טריכום"),
+                        "details": f"מחיר: {item.get('price', 'לא ידוע')} ₪"
+                    })
             
-            # מעבר לאמולציית Safari או Firefox שעוברות טוב יותר הגנות מסוימות
-            response = requests.get(url, impersonate="safari15_5", headers=headers, timeout=30)
-            print(f"Trying {url} -> Status: {response.status_code}")
-            
-            if response.status_code == 200:
-                html_text = response.text
-                if "גישה נחסמה" not in html_text and "403" not in html_text:
-                    success = True
-                    if TARGET_GROWER in html_text:
-                        products_data.append({
-                            "name": f"מוצרי {TARGET_GROWER} אותר בהצלחה!",
-                            "details": f"הגישה הצליחה דרך {url} ושם המגדל נמצא בתוכן האתר."
-                        })
-                    else:
-                        products_data.append({
-                            "name": "האתר זמין אך נדרש מיקוד",
-                            "details": f"התקבלה תשובה תקינה מ-{url}, אך שם המגדל לא הופיע בטקסט הגולמי."
-                        })
-                    break
-        except Exception as e:
-            print(f"Failed on {url}: {e}")
+            if not found:
+                products_data.append({
+                    "name": "ה-API תקין אך לא נמצאו פריטים",
+                    "data": "התקבלה תשובה מהשרת אך שם המגדל לא אותר במבנה הנתונים."
+                })
+        else:
+            # אם אין גישה ישירה ל-API, נציג הודעה ברורה
+            products_data.append({
+                "name": "חסימת שרת מלאה",
+                "details": "האתר מגן על הנתונים מפני שרתים חיצוניים. מומלץ להריץ את הסקריפט ישירות ממחשב הבית שלך."
+            })
 
-    if not success:
+    except Exception as e:
         products_data.append({
-            "name": "שגיאת מעקב",
-            "details": "השרת ממשיך לחסום את כתובות ה-IP של GitHub Actions. נדרש מעבר לשיטת פתרון מבוססת פרוקסי או חיפוש ידני."
+            "name": "שגיאת תקשורת",
+            "details": str(e)
         })
 
     return products_data
@@ -72,7 +70,7 @@ def send_email(report_content):
     html_body = f"""
     <div dir="rtl" style="font-family: Arial, sans-serif;">
         <h2>דו"ח מעקב מחירים - {TARGET_GROWER}</h2>
-        <p>תוצאות הסריקה:</p>
+        <p>תוצאות:</p>
         <pre style="background: #f4f4f4; padding: 10px; border-radius: 5px; white-space: pre-wrap;">{report_content}</pre>
         <p>בברכה, <br><b>Jane Price Agent</b></p>
     </div>
@@ -83,9 +81,8 @@ def send_email(report_content):
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
             server.sendmail(EMAIL_SENDER, EMAIL_RECEIVER, msg.as_string())
-        print("Email sent successfully!")
     except Exception as e:
-        print(f"Error sending email: {e}")
+        print(f"Error: {e}")
 
 if __name__ == "__main__":
     data = scrape_jane_products()
