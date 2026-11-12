@@ -16,26 +16,47 @@ def scrape_jane_products():
 
     try:
         url = "https://jane.co.il/cannabis-products"
-        # ביצוע בקשה עם התחזות מלאה לדפדפן Chrome דרך הרשת
-        response = requests.get(url, impersonate="chrome", timeout=30)
+        
+        # הגדרת כותרות מדויקות שמדמות דפדפן לחלוטין
+        headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Referer": "https://jane.co.il/",
+            "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1"
+        }
+
+        # ביצוע הבקשה עם התחזות לדפדפן Chrome ושליחת הכותרות
+        response = requests.get(url, impersonate="chrome", headers=headers, timeout=30)
         
         print(f"Response status code: {response.status_code}")
         
         if response.status_code == 200:
             html_text = response.text
             
-            if "גישה נחסמה" in html_text or "Cloudflare" in html_text:
-                print("Blocked by security wall.")
+            if "גישה נחסמה" in html_text or "Cloudflare" in html_text or "403" in html_text:
                 products_data.append({
                     "name": "שגיאת חסימה",
-                    "details": "האתר חוסם את הבקשה האוטומטית."
+                    "details": "האתר זיהה את הבקשה כחסומה מאובטחת."
                 })
             else:
-                print("Access successful! Processing page content...")
-                products_data.append({
-                    "name": f"מוצרי {TARGET_GROWER}",
-                    "details": "העמוד התקבל בהצלחה. האתר מאפשר כעת גישה לנתונים."
-                })
+                # בדיקה האם המגדל מופיע בטקסט של העמוד
+                if TARGET_GROWER in html_text:
+                    products_data.append({
+                        "name": f"מוצרי {TARGET_GROWER} נמצאו בהצלחה!",
+                        "details": f"האתר החזיר תשובה תקינה (200) והשם '{TARGET_GROWER}' אותר בתוכן העמוד."
+                    })
+                else:
+                    products_data.append({
+                        "name": f"מוצרי {TARGET_GROWER}",
+                        "details": "העמוד נטען בהצלחה אך טרם אותר אזכור מדויק בטקסט."
+                    })
         else:
             products_data.append({
                 "name": "שגיאת שרת",
