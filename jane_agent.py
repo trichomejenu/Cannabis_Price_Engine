@@ -4,7 +4,6 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from playwright.sync_api import sync_playwright
 
-# הגדרות שליחה מתוך ה-Secrets של GitHub
 EMAIL_SENDER = os.environ.get("EMAIL_SENDER")
 EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 EMAIL_RECEIVER = os.environ.get("EMAIL_RECEIVER")
@@ -12,22 +11,39 @@ EMAIL_RECEIVER = os.environ.get("EMAIL_RECEIVER")
 TARGET_GROWER = "טריכום"
 
 def scrape_jane_products():
-    print(f"Starting scan for grower: {TARGET_GROWER}")
+    print(f"Starting stealth scan for grower: {TARGET_GROWER}")
     products_data = []
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        # הפעלת הדפדפן עם הגדרות שמונעות זיהוי אוטומציה
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox"
+            ]
+        )
+        
+        # יצירת הקשר עם הגדרות אנושיות (User-Agent אמיתי)
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080}
+        )
+        
+        page = context.new_page()
         
         try:
-            # מעבר לעמוד מוצרי הקנאביס באתר
+            print("Navigating to Jane...")
             page.goto("https://jane.co.il/cannabis-products", timeout=60000)
-            page.wait_for_timeout(5000) # המתנה לטעינת העמוד
-
-            print("Searching for items on page...")
             
-            # איסוף אלמנטים מהעמוד
-            items = page.locator(".product-item, tr, .card").all()
+            # המתנה אקראית כדי לתת לעמוד להטען כמו שצריך מעבר להגנות
+            page.wait_for_timeout(8000)
+
+            print("Extracting products...")
+            
+            # חיפוש כרטיסי מוצר באתר
+            items = page.locator(".product-item, .card, tr").all()
             
             for item in items:
                 try:
@@ -38,19 +54,26 @@ def scrape_jane_products():
                             product_name = lines[0]
                             products_data.append({
                                 "name": product_name,
-                                "details": text[:200]
+                                "details": text[:300]
                             })
                 except Exception:
                     continue
 
-            # אם לא נמצאו פריטים באופן ספציפי, ניקח את תוכן העמוד הכללי
+            # אם עדיין אין תוצאות ממוקדות, ניקח את הטקסט הגלוי מתוך אלמנטים מרכזיים
             if not products_data:
-                print("Fallback: collecting general page text...")
-                body_text = page.inner_text("body")
-                products_data.append({
-                    "name": f"All products for {TARGET_GROWER}",
-                    "details": body_text[:1000]
-                })
+                print("Collecting visible text fallback...")
+                main_content = page.locator("body").inner_text()
+                # נסנן החוצה את הודעת החסימה אם קיימת ונשאיר טקסט כללי
+                if "גישה נחסמה" not in main_content:
+                    products_data.append({
+                        "name": f"מוצרי {TARGET_GROWER}",
+                        "details": main_content[:1500]
+                    })
+                else:
+                    products_data.append({
+                        "name": "שגיאת חסימה",
+                        "details": "האתר עדיין מזהה גישה אוטומטית. ננסה לשפר זאת בהרצה הבאה."
+                    })
 
         except Exception as e:
             print(f"Error during scraping: {e}")
@@ -61,7 +84,6 @@ def scrape_jane_products():
 
 def send_email(report_content):
     if not EMAIL_SENDER or not EMAIL_PASSWORD or not EMAIL_RECEIVER:
-        print("Missing email configuration variables.")
         return
 
     msg = MIMEMultipart()
@@ -72,7 +94,7 @@ def send_email(report_content):
     html_body = f"""
     <div dir="rtl" style="font-family: Arial, sans-serif;">
         <h2>דו"ח מעקב מחירים - {TARGET_GROWER}</h2>
-        <p>להלן נתוני המוצרים העדכניים שנסרקו מהאתר:</p>
+        <p>תוצאות הסריקה המעודכנות:</p>
         <pre style="background: #f4f4f4; padding: 10px; border-radius: 5px; white-space: pre-wrap;">{report_content}</pre>
         <p>בברכה, <br><b>Jane Price Agent</b></p>
     </div>
@@ -92,5 +114,3 @@ if __name__ == "__main__":
     if data:
         report = "\n".join([f"• {item['name']}\n  {item['details']}\n" for item in data])
         send_email(report)
-    else:
-        print("No products found to send.")
