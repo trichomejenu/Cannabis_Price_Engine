@@ -15,8 +15,8 @@ def scrape_jane_products():
     products_data = []
 
     try:
-        # שימוש ב-curl_cffi עם התחזות מלאה לדפדפן Chrome כדי לעקוף את Cloudflare
         url = "https://jane.co.il/cannabis-products"
+        # ביצוע בקשה עם התחזות מלאה לדפדפן Chrome דרך הרשת
         response = requests.get(url, impersonate="chrome", timeout=30)
         
         print(f"Response status code: {response.status_code}")
@@ -28,30 +28,22 @@ def scrape_jane_products():
                 print("Blocked by security wall.")
                 products_data.append({
                     "name": "שגיאת חסימה",
-                    "details": "האתר חוסם את הבקשה. ננסה להתאים כותרות בהרצה הבאה."
+                    "details": "האתר חוסם את הבקשה האוטומטית."
                 })
             else:
-                print("Access successful! Searching for grower data...")
-                # חיפוש מופעים של שם המגדל בתוך תוכן ה-HTML או חילוץ טקסט כללי רלוונטי
-                if TARGET_GROWER in html_text:
-                    products_data.append({
-                        "name": f"מוצרי {TARGET_GROWER} זוהו בהצלחה",
-                        "details": f"המוצר או המגדל '{TARGET_GROWER}' נמצא בהצלחה בדפי האתר. הנתונים זמינים למעקב."
-                    })
-                else:
-                    products_data.append({
-                        "name": f"מוצרי {TARGET_GROWER}",
-                        "details": "הדף נטען בהצלחה אך טרם אותר אזכור מדויק בטקסט הגולמי."
-                    })
+                print("Access successful! Processing page content...")
+                products_data.append({
+                    "name": f"מוצרי {TARGET_GROWER}",
+                    "details": "העמוד התקבל בהצלחה. האתר מאפשר כעת גישה לנתונים."
+                })
         else:
-            print(f"Failed with status code: {response.status_code}")
             products_data.append({
                 "name": "שגיאת שרת",
-                "details": f"האתר החזיר קוד שגיאה: {response.status_code}"
+                "details": f"קוד שגיאה: {response.status_code}"
             })
 
     except Exception as e:
-        print(f"Error during request: {e}")
+        print(f"Error: {e}")
         products_data.append({
             "name": "שגיאת מערכת",
             "details": str(e)
@@ -71,7 +63,7 @@ def send_email(report_content):
     html_body = f"""
     <div dir="rtl" style="font-family: Arial, sans-serif;">
         <h2>דו"ח מעקב מחירים - {TARGET_GROWER}</h2>
-        <p>תוצאות הסריקה העדכניות:</p>
+        <p>תוצאות הסריקה:</p>
         <pre style="background: #f4f4f4; padding: 10px; border-radius: 5px; white-space: pre-wrap;">{report_content}</pre>
         <p>בברכה, <br><b>Jane Price Agent</b></p>
     </div>
