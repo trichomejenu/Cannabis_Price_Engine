@@ -4,6 +4,7 @@ import json
 import os
 import re
 import smtplib
+import subprocess
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from dotenv import load_dotenv
@@ -31,16 +32,41 @@ def load_history():
   return {}
 
 
-def save_history(data):
+def save_and_push_history(data):
   try:
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
       json.dump(data, f, ensure_ascii=False, indent=4)
     print(
-        f"💾 קובץ {HISTORY_FILE} נשמר בהצלחה מקומית. גודל נתונים:"
-        f" {len(str(data))} תווים"
+        f"💾 קובץ {HISTORY_FILE} נשמר מקומית בהצלחה. מעדכן ב-GitHub..."
     )
+
+    # ביצוע פעולות Git ישירות מתוך הסקריפט
+    subprocess.run(
+        ["git", "config", "--global", "user.name", "Price Bot"], check=False
+    )
+    subprocess.run(
+        [
+            "git",
+            "config",
+            "--global",
+            "user.email",
+            "bot@users.noreply.github.com",
+        ],
+        check=False,
+    )
+    subprocess.run(["git", "add", HISTORY_FILE], check=False)
+    subprocess.run(
+        ["git", "commit", "-m", "Auto-update price history via script"],
+        capture_output=True,
+        text=True,
+    )
+    push_res = subprocess.run(
+        ["git", "push", "origin", "HEAD:main"], capture_output=True, text=True
+    )
+    print("📤 תוצאת עדכון ה-Git:", push_res.stdout, push_res.stderr)
+
   except Exception as e:
-    print(f"❌ שגיאה בשמירת קובץ ההיסטוריה מקומית: {e}")
+    print(f"❌ שגיאה בשמירה/דחיפה של קובץ ההיסטוריה: {e}")
 
 
 def send_email_alert(drops):
@@ -97,7 +123,7 @@ def send_email_alert(drops):
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
       server.login(EMAIL_SENDER, EMAIL_PASSWORD)
       server.send_message(msg)
-    print("✅ התראת מייל נשלחה בהצלחה עם שעת השינוי!")
+    print("✅ התראת מייל נשלחה בהצלחה!")
   except Exception as e:
     print(f"❌ שגיאה בשליחת המייל: {e}")
 
@@ -234,12 +260,13 @@ async def scrape_jane():
         f"{current_date_str} {current_time_str}"
     )
 
-  save_history(history)
+  # שמירה ודחיפה אוטומטית לענן מתוך הפייתון
+  save_and_push_history(history)
 
   if price_drops:
     send_email_alert(price_drops)
   else:
-    print("ℹ️ הסריקה הסתיימה, הנתונים עודכנו בקובץ המקומי.")
+    print("ℹ️ הסריקה הסתיימה והנתונים עודכנו ב-GitHub.")
 
 
 if __name__ == "__main__":
