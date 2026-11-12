@@ -11,63 +11,51 @@ EMAIL_RECEIVER = os.environ.get("EMAIL_RECEIVER")
 TARGET_GROWER = "טריכום"
 
 def scrape_jane_products():
-    print(f"Starting request scan for grower: {TARGET_GROWER}")
+    print(f"Starting API/Direct scan for grower: {TARGET_GROWER}")
     products_data = []
 
-    try:
-        url = "https://jane.co.il/cannabis-products"
-        
-        # הגדרת כותרות מדויקות שמדמות דפדפן לחלוטין
-        headers = {
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Referer": "https://jane.co.il/",
-            "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Ch-Ua-Platform": '"Windows"',
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "same-origin",
-            "Sec-Fetch-User": "?1",
-            "Upgrade-Insecure-Requests": "1"
-        }
+    # ננסה לגשת לנקודת קצה או לעמוד ראשי עם פרופיל דפדפן שונה (Safari / Firefox)
+    urls_to_try = [
+        "https://jane.co.il/",
+        "https://jane.co.il/cannabis-products"
+    ]
 
-        # ביצוע הבקשה עם התחזות לדפדפן Chrome ושליחת הכותרות
-        response = requests.get(url, impersonate="chrome", headers=headers, timeout=30)
-        
-        print(f"Response status code: {response.status_code}")
-        
-        if response.status_code == 200:
-            html_text = response.text
+    success = False
+    for url in urls_to_try:
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "he-IL,he;q=0.9",
+                "Referer": "https://www.google.com/"
+            }
             
-            if "גישה נחסמה" in html_text or "Cloudflare" in html_text or "403" in html_text:
-                products_data.append({
-                    "name": "שגיאת חסימה",
-                    "details": "האתר זיהה את הבקשה כחסומה מאובטחת."
-                })
-            else:
-                # בדיקה האם המגדל מופיע בטקסט של העמוד
-                if TARGET_GROWER in html_text:
-                    products_data.append({
-                        "name": f"מוצרי {TARGET_GROWER} נמצאו בהצלחה!",
-                        "details": f"האתר החזיר תשובה תקינה (200) והשם '{TARGET_GROWER}' אותר בתוכן העמוד."
-                    })
-                else:
-                    products_data.append({
-                        "name": f"מוצרי {TARGET_GROWER}",
-                        "details": "העמוד נטען בהצלחה אך טרם אותר אזכור מדויק בטקסט."
-                    })
-        else:
-            products_data.append({
-                "name": "שגיאת שרת",
-                "details": f"קוד שגיאה: {response.status_code}"
-            })
+            # מעבר לאמולציית Safari או Firefox שעוברות טוב יותר הגנות מסוימות
+            response = requests.get(url, impersonate="safari15_5", headers=headers, timeout=30)
+            print(f"Trying {url} -> Status: {response.status_code}")
+            
+            if response.status_code == 200:
+                html_text = response.text
+                if "גישה נחסמה" not in html_text and "403" not in html_text:
+                    success = True
+                    if TARGET_GROWER in html_text:
+                        products_data.append({
+                            "name": f"מוצרי {TARGET_GROWER} אותר בהצלחה!",
+                            "details": f"הגישה הצליחה דרך {url} ושם המגדל נמצא בתוכן האתר."
+                        })
+                    else:
+                        products_data.append({
+                            "name": "האתר זמין אך נדרש מיקוד",
+                            "details": f"התקבלה תשובה תקינה מ-{url}, אך שם המגדל לא הופיע בטקסט הגולמי."
+                        })
+                    break
+        except Exception as e:
+            print(f"Failed on {url}: {e}")
 
-    except Exception as e:
-        print(f"Error: {e}")
+    if not success:
         products_data.append({
-            "name": "שגיאת מערכת",
-            "details": str(e)
+            "name": "שגיאת מעקב",
+            "details": "השרת ממשיך לחסום את כתובות ה-IP של GitHub Actions. נדרש מעבר לשיטת פתרון מבוססת פרוקסי או חיפוש ידני."
         })
 
     return products_data
