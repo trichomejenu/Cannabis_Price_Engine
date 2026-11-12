@@ -93,7 +93,6 @@ def send_email_alert(drops):
 
 
 async def scrape_jane():
-  # קבלת התאריך והשעה הנוכחיים (שעון ישראל)
   now = datetime.now()
   current_date_str = now.strftime("%Y-%m-%d")
   current_time_str = now.strftime("%H:%M:%S")
@@ -116,52 +115,74 @@ async def scrape_jane():
     )
     page = await context.new_page()
 
-    await page.goto(SEARCH_URL, wait_until="networkidle", timeout=60000)
-    await page.wait_for_timeout(4000)
+    try:
+      # טעינה בטוחה עם מגבלת זמן של 30 שניות בלבד
+      await page.goto(
+          SEARCH_URL, wait_until="domcontentloaded", timeout=30000
+      )
+      await page.wait_for_timeout(3000)
 
-    product_links = await page.locator("a").all()
-    target_href = None
+      # חיפוש קישור המוצר
+      product_links = await page.locator("a").all()
+      target_href = None
 
-    for link in product_links:
-      text = await link.inner_text()
-      if TARGET_PRODUCT in text and TARGET_BRAND in text:
-        target_href = await link.get_attribute("href")
-        break
+      for link in product_links:
+        try:
+          text = await link.inner_text()
+          if TARGET_PRODUCT in text and TARGET_BRAND in text:
+            target_href = await link.get_attribute("href")
+            break
+        except:
+          continue
 
-    if not target_href:
-      print("⚠️ לא נמצא עמוד מוצר תואם בחיפוש.")
+      if not target_href:
+        print("⚠️ לא נמצא עמוד מוצר תואם בחיפוש.")
+        await browser.close()
+        return
+
+      full_product_url = (
+          f"https://jane.co.il{target_href}"
+          if target_href.startswith("/")
+          else target_href
+      )
+      print(f"📄 נכנס לעמוד המוצר: {full_product_url}")
+
+      await page.goto(
+          full_product_url, wait_until="domcontentloaded", timeout=30000
+      )
+      await page.wait_for_timeout(3000)
+
+      rows = await page.locator("div, tr, li").all()
+      current_offers = {}
+
+      for row in rows:
+        try:
+          text = await row.inner_text()
+          if "₪" in text and 10 < len(text) < 150:
+            price_match = re.search(
+                r"(\d+(?:\.\d+)?)\s*₪|₪\s*(\d+(?:\.\d+)?)", text
+            )
+            if price_match:
+              price_val = float(price_match.group(1) or price_match.group(2))
+              lines = [
+                  line.strip()
+                  for line in text.split("\n")
+                  if line.strip() and "₪" not in line
+              ]
+              if lines:
+                pharmacy_name = lines[0]
+                if (
+                    pharmacy_name not in current_offers
+                    or price_val < current_offers[pharmacy_name]
+                ):
+                  current_offers[pharmacy_name] = price_val
+        except:
+          continue
+
+    except Exception as e:
+      print(f"❌ שגיאה במהלך הסריקה: {e}")
       await browser.close()
       return
-
-    full_product_url = (
-        f"https://jane.co.il{target_href}"
-        if target_href.startswith("/")
-        else target_href
-    )
-    await page.goto(full_product_url, wait_until="networkidle", timeout=60000)
-    await page.wait_for_timeout(4000)
-
-    rows = await page.locator("div, tr, li").all()
-    current_offers = {}
-
-    for row in rows:
-      text = await row.inner_text()
-      if "₪" in text and 10 < len(text) < 150:
-        price_match = re.search(r"(\d+(?:\.\d+)?)\s*₪|₪\s*(\d+(?:\.\d+)?)", text)
-        if price_match:
-          price_val = float(price_match.group(1) or price_match.group(2))
-          lines = [
-              line.strip()
-              for line in text.split("\n")
-              if line.strip() and "₪" not in line
-          ]
-          if lines:
-            pharmacy_name = lines[0]
-            if (
-                pharmacy_name not in current_offers
-                or price_val < current_offers[pharmacy_name]
-            ):
-              current_offers[pharmacy_name] = price_val
 
     await browser.close()
 
@@ -169,7 +190,6 @@ async def scrape_jane():
     print("⚠️ לא זוהו הצעות מחיר פעילות בעמוד המוצר.")
     return
 
-  # מבנה ההיסטוריה החדש יכלול מעקב לפי תאריכים
   if "products_history" not in history:
     history["products_history"] = {}
 
@@ -181,18 +201,14 @@ async def scrape_jane():
 
   for pharmacy, current_price in current_offers.items():
     print(f"   - {pharmacy}: ₪{current_price}")
-
-    # בדיקת המחיר הקודם הידוע של הספק הזה
     last_known_price = product_records.get(pharmacy, {}).get("price")
 
     if last_known_price is not None and current_price < last_known_price:
-      # בדוק האם כבר דווח על ירידת מחיר לספק הזה *היום*
       last_alert_date = product_records.get(pharmacy, {}).get(
           "last_alert_date"
       )
 
       if last_alert_date != current_date_str:
-        # זו ירידת המחיר הראשונה של הספק הזה היום!
         price_drops.append({
             "product": f"{TARGET_PRODUCT} ({TARGET_BRAND})",
             "pharmacy": pharmacy,
@@ -201,10 +217,8 @@ async def scrape_jane():
             "diff": round(last_known_price - current_price, 2),
             "time": f"{current_date_str} בשעה {current_time_str}",
         })
-        # עדכון תאריך ההתראה האחרונה כדי לאצף התראות באותו יום
         product_records[pharmacy]["last_alert_date"] = current_date_str
 
-    # עדכון נתוני הספק במאגר
     if pharmacy not in product_records:
       product_records[pharmacy] = {}
     product_records[pharmacy]["price"] = current_price
