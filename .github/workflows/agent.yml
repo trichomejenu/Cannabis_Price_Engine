@@ -2,8 +2,8 @@ name: Jane Price Agent
 
 on:
   schedule:
-    - cron: '0 8,20 * * *' # יריץ את הסוכן כל יום ב-08:00 וב-20:00
-  workflow_dispatch: # מאפשר לך ללחוץ ידנית כדי לבדוק שזה עובד
+    - cron: '0 8,20 * * *'
+  workflow_dispatch:
 
 jobs:
   run-agent:
@@ -34,15 +34,3 @@ jobs:
           EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
         run: |
           python jane_agent.py
-
-      - name: Save price history back to repo
-        run: |
-          if [ -f price_history.json ]; then
-            git config --global user.name "Price Bot"
-            git config --global user.email "bot@users.noreply.github.com"
-            git add price_history.json
-            git commit -m "Auto-update price history" || exit 0
-            git push origin HEAD:main
-          else
-            echo "price_history.json not found, skipping commit."
-          fi
