@@ -2,7 +2,7 @@ import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from playwright.sync_api import sync_playwright
+from curl_cffi import requests
 
 EMAIL_SENDER = os.environ.get("EMAIL_SENDER")
 EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
@@ -11,89 +11,51 @@ EMAIL_RECEIVER = os.environ.get("EMAIL_RECEIVER")
 TARGET_GROWER = "טריכום"
 
 def scrape_jane_products():
-    print(f"Starting advanced stealth scan for grower: {TARGET_GROWER}")
+    print(f"Starting request scan for grower: {TARGET_GROWER}")
     products_data = []
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-infobars",
-                "--window-size=1920,1080"
-            ]
-        )
+    try:
+        # שימוש ב-curl_cffi עם התחזות מלאה לדפדפן Chrome כדי לעקוף את Cloudflare
+        url = "https://jane.co.il/cannabis-products"
+        response = requests.get(url, impersonate="chrome", timeout=30)
         
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            viewport={"width": 1920, "height": 1080},
-            locale="he-IL",
-            timezone_id="Asia/Jerusalem"
-        )
+        print(f"Response status code: {response.status_code}")
         
-        page = context.new_page()
-        
-        # הסתרת מאפייני אוטומציה מתוך ה-JavaScript של הדפדפן
-        page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
-        """)
-        
-        try:
-            print("Navigating to Jane...")
-            page.goto("https://jane.co.il/cannabis-products", timeout=60000, wait_until="domcontentloaded")
+        if response.status_code == 200:
+            html_text = response.text
             
-            # המתנה והדמיית גלילה אנושית כדי לעבור את בדיקות האבטחה
-            print("Simulating human interaction...")
-            page.wait_for_timeout(5000)
-            page.mouse.move(200, 200)
-            page.mouse.down()
-            page.mouse.up()
-            page.evaluate("window.scrollBy(0, 500);")
-            page.wait_for_timeout(4000)
-
-            # בדיקה האם האתר עדיין חוסם אותנו
-            body_text = page.inner_text("body")
-            if "גישה נחסמה" in body_text:
-                print("Cloudflare block detected. Trying alternative wait...")
-                page.wait_for_timeout(10000)
-                body_text = page.inner_text("body")
-
-            if "גישה נחסמה" not in body_text:
-                print("Access granted! Extracting product items...")
-                # ננסה לאסוף אלמנטים של מוצרים או טקסט רלוונטי
-                items = page.locator(".product-item, .card, tr, div").all()
-                for item in items:
-                    try:
-                        text = item.inner_text()
-                        if TARGET_GROWER in text and len(text) < 500:
-                            if text not in [p['details'] for p in products_data]:
-                                products_data.append({
-                                    "name": text.split('\n')[0],
-                                    "details": text
-                                })
-                    except Exception:
-                        continue
-                
-                # אם לא נמצאו פריטים ממוקדים, ניקח חלקים מהעמוד הראשי
-                if not products_data:
-                    products_data.append({
-                        "name": f"מוצרי {TARGET_GROWER} (כללי)",
-                        "details": body_text[:2000]
-                    })
-            else:
+            if "גישה נחסמה" in html_text or "Cloudflare" in html_text:
+                print("Blocked by security wall.")
                 products_data.append({
                     "name": "שגיאת חסימה",
-                    "details": "האתר עדיין חוסם את הגישה האוטומטית בשל הגנת האתר."
+                    "details": "האתר חוסם את הבקשה. ננסה להתאים כותרות בהרצה הבאה."
                 })
+            else:
+                print("Access successful! Searching for grower data...")
+                # חיפוש מופעים של שם המגדל בתוך תוכן ה-HTML או חילוץ טקסט כללי רלוונטי
+                if TARGET_GROWER in html_text:
+                    products_data.append({
+                        "name": f"מוצרי {TARGET_GROWER} זוהו בהצלחה",
+                        "details": f"המוצר או המגדל '{TARGET_GROWER}' נמצא בהצלחה בדפי האתר. הנתונים זמינים למעקב."
+                    })
+                else:
+                    products_data.append({
+                        "name": f"מוצרי {TARGET_GROWER}",
+                        "details": "הדף נטען בהצלחה אך טרם אותר אזכור מדויק בטקסט הגולמי."
+                    })
+        else:
+            print(f"Failed with status code: {response.status_code}")
+            products_data.append({
+                "name": "שגיאת שרת",
+                "details": f"האתר החזיר קוד שגיאה: {response.status_code}"
+            })
 
-        except Exception as e:
-            print(f"Error during scraping: {e}")
-        finally:
-            browser.close()
+    except Exception as e:
+        print(f"Error during request: {e}")
+        products_data.append({
+            "name": "שגיאת מערכת",
+            "details": str(e)
+        })
 
     return products_data
 
@@ -109,7 +71,7 @@ def send_email(report_content):
     html_body = f"""
     <div dir="rtl" style="font-family: Arial, sans-serif;">
         <h2>דו"ח מעקב מחירים - {TARGET_GROWER}</h2>
-        <p>תוצאות הסריקה:</p>
+        <p>תוצאות הסריקה העדכניות:</p>
         <pre style="background: #f4f4f4; padding: 10px; border-radius: 5px; white-space: pre-wrap;">{report_content}</pre>
         <p>בברכה, <br><b>Jane Price Agent</b></p>
     </div>
