@@ -23,14 +23,24 @@ HISTORY_FILE = "price_history.json"
 
 def load_history():
   if os.path.exists(HISTORY_FILE):
-    with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-      return json.load(f)
+    try:
+      with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+    except Exception as e:
+      print(f"⚠️ שגיאה בטעינת קובץ ההיסטוריה: {e}")
   return {}
 
 
 def save_history(data):
-  with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-    json.dump(data, f, ensure_ascii=False, indent=4)
+  try:
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+      json.dump(data, f, ensure_ascii=False, indent=4)
+    print(
+        f"💾 קובץ {HISTORY_FILE} נשמר בהצלחה מקומית. גודל נתונים:"
+        f" {len(str(data))} תווים"
+    )
+  except Exception as e:
+    print(f"❌ שגיאה בשמירת קובץ ההיסטוריה מקומית: {e}")
 
 
 def send_email_alert(drops):
@@ -116,13 +126,11 @@ async def scrape_jane():
     page = await context.new_page()
 
     try:
-      # טעינה בטוחה עם מגבלת זמן של 30 שניות בלבד
       await page.goto(
           SEARCH_URL, wait_until="domcontentloaded", timeout=30000
       )
       await page.wait_for_timeout(3000)
 
-      # חיפוש קישור המוצר
       product_links = await page.locator("a").all()
       target_href = None
 
@@ -231,9 +239,7 @@ async def scrape_jane():
   if price_drops:
     send_email_alert(price_drops)
   else:
-    print(
-        "ℹ️ אין ירידות מחיר חדשות או שכבר דווח על תזוזה לספקים אלו היום."
-    )
+    print("ℹ️ הסריקה הסתיימה, הנתונים עודכנו בקובץ המקומי.")
 
 
 if __name__ == "__main__":
